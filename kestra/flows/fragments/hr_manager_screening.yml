@@ -1,0 +1,129 @@
+# Phase 2 proof fragment for the HR manager screening step.
+#
+# This file targets Kestra 1.x because it uses `ForEach` and flow-level
+# `pluginDefaults`, as required by updated.md. Kestra 2.0 removed
+# `pluginDefaults` from Open Source and renamed `ForEach` to `Loop`, so
+# docker-compose.yml pins the image to v1.3.45.
+# Verified against Kestra v1.3.0 ForEach and plugin-ai v1.16.0 ChatCompletion:
+# `concurrencyLimit`, `taskrun.value`, `jsonOutput`, `logRequests` and
+# `logResponses` are the 1.x names.
+#
+# The backend prepares sanitised prompts and applies validated JSON. Kestra
+# only orchestrates and calls Gemini. `execution.id` is the shortlist-email
+# idempotency key, so retries inside one execution cannot send twice.
+#
+# Execution outputs still contain the sanitised prompts and model JSON. The
+# `system.hr_retention` flow purges terminal executions and logs after 7 days;
+# do not rely on Kestra defaults.
+
+id: hr_manager_screening
+namespace: hr.recruitment.fragments
+description: |
+  Score forwarded candidates for one job with a Kestra AI task, then apply the
+  validated results and email the shortlist once.
+
+inputs:
+  - id: job_id
+    type: STRING
+    required: true
+  - id: backend_url
+    type: STRING
+    defaults: http://backend:8000
+  - id: gemini_model
+    type: STRING
+    defaults: gemini-2.5-flash
+
+pluginDefaults:
+  - type: io.kestra.plugin.ai.completion.ChatCompletion
+    values:
+      provider:
+        type: io.kestra.plugin.ai.provider.GoogleGemini
+        apiKey: "{{ secret('GEMINI_API_KEY') }}"
+        modelName: "{{ inputs.gemini_model }}"
+
+tasks:
+  - id: screen_prepare
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/prepare"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "job_id": inputs.job_id,
+        "limit": 200
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  - id: score_each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.screen_prepare.body).items }}"
+    concurrencyLimit: 1
+    tasks:
+      - id: ai_score
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ taskrun.value.response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ taskrun.value.system_prompt }}"
+          - type: USER
+            content: "{{ taskrun.value.user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: screen_apply_item
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "items": [{
+              "candidate_id": taskrun.value.candidate_id,
+              "result": outputs.ai_score.jsonOutput,
+              "model_name": inputs.gemini_model,
+              "prompt_version": taskrun.value.prompt_version
+            }],
+            "job_id": inputs.job_id,
+            "idempotency_key": execution.id,
+            "finalize": false
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  - id: screen_apply_finalize
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/apply"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "items": [],
+        "job_id": inputs.job_id,
+        "idempotency_key": execution.id,
+        "finalize": true
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3

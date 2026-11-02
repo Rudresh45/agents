@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.import_linter_cache
+.coverage
+htmlcov
+.env
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+logs
+uploads
+tests

@@ -1,0 +1,363 @@
+# Phase 5: scheduled inbox intake.
+#
+# The backend fetches IMAP mail, redacts it, and returns only sanitised prompts.
+# Kestra calls Gemini, then posts the validated JSON back. Raw sender details
+# and attachments never travel through Kestra.
+#
+# This file targets Kestra 1.x (`ForEach`, flow-level `pluginDefaults`). The
+# Compose image is pinned to v1.3.45. Execution outputs still contain the
+# sanitised prompts and model JSON; `system.hr_retention` purges terminal
+# executions and logs after 7 days.
+
+id: hr_intake
+namespace: hr.recruitment
+description: |
+  Read the HR inbox, classify applications and replies with Gemini, create
+  candidates, and send one candidate digest to the HR manager.
+
+inputs:
+  - id: backend_url
+    type: STRING
+    defaults: http://backend:8000
+  - id: gemini_model
+    type: STRING
+    defaults: gemini-2.5-flash
+  - id: inbox_limit
+    type: INT
+    defaults: 50
+
+pluginDefaults:
+  - type: io.kestra.plugin.ai.completion.ChatCompletion
+    values:
+      provider:
+        type: io.kestra.plugin.ai.provider.GoogleGemini
+        apiKey: "{{ secret('GEMINI_API_KEY') }}"
+        modelName: "{{ inputs.gemini_model }}"
+
+tasks:
+  - id: inbox_prepare
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/prepare"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "limit": inputs.inbox_limit
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  # Alias-matched applications: the sender address or subject already selected
+  # the job, so no job-match AI call is needed.
+  - id: classify_alias_applications
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.inbox_prepare.body).alias_applications }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.inbox_prepare.body).has_work }}"
+    tasks:
+      - id: ai_classify_alias
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).classification.response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).classification.system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).classification.user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: apply_alias
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "email_key": fromJson(taskrun.value).email_key,
+            "classification": outputs.ai_classify_alias.jsonOutput,
+            "classification_model": inputs.gemini_model,
+            "classification_prompt_version": fromJson(taskrun.value).classification.prompt_version,
+            "job_match": null
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+      - id: acknowledge_alias
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/acknowledge"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "candidate_id": outputs.apply_alias.body.candidate_id,
+            "draft_type": outputs.apply_alias.body.draft_type
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  # Applications without an alias need a job-match AI call before apply.
+  - id: classify_ai_applications
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.inbox_prepare.body).ai_applications }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.inbox_prepare.body).has_work }}"
+    tasks:
+      - id: ai_classify_application
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).classification.response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).classification.system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).classification.user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: ai_job_match
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).job_match.response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).job_match.system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).job_match.user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: apply_application
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "email_key": fromJson(taskrun.value).email_key,
+            "classification": outputs.ai_classify_application.jsonOutput,
+            "classification_model": inputs.gemini_model,
+            "classification_prompt_version": fromJson(taskrun.value).classification.prompt_version,
+            "job_match": outputs.ai_job_match.jsonOutput,
+            "job_match_model": inputs.gemini_model,
+            "job_match_prompt_version": fromJson(taskrun.value).job_match.prompt_version
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+      - id: acknowledge_application
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/acknowledge"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "candidate_id": outputs.apply_application.body.candidate_id,
+            "draft_type": outputs.apply_application.body.draft_type
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  # Candidate replies are classified against the existing candidate.
+  - id: classify_replies
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.inbox_prepare.body).replies }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.inbox_prepare.body).has_work }}"
+    tasks:
+      - id: ai_classify_reply
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).reply.response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).reply.system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).reply.user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: apply_reply
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/inbox/reply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "email_key": fromJson(taskrun.value).email_key,
+            "reply": outputs.ai_classify_reply.jsonOutput,
+            "model_name": inputs.gemini_model,
+            "prompt_version": fromJson(taskrun.value).reply.prompt_version
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  - id: forward_prepare
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-agent/forward/prepare"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "limit": 200
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  - id: summarise_each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.forward_prepare.body).items }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.forward_prepare.body).has_work }}"
+    tasks:
+      - id: ai_summary
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: apply_summary
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/forward/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "items": [{
+              "candidate_id": fromJson(taskrun.value).candidate_id,
+              "result": outputs.ai_summary.jsonOutput,
+              "model_name": inputs.gemini_model,
+              "prompt_version": fromJson(taskrun.value).prompt_version
+            }],
+            "candidate_ids": [fromJson(taskrun.value).candidate_id],
+            "idempotency_key": execution.id,
+            "finalize": false
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  # One digest per execution. The backend marker plus execution.id make a
+  # retry safe even if the finalize request is repeated.
+  - id: forward_finalize
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-agent/forward/apply"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "items": [],
+        "candidate_ids": fromJson(outputs.forward_prepare.body).candidate_ids,
+        "idempotency_key": execution.id,
+        "finalize": true
+      } }}
+    runIf: "{{ fromJson(outputs.forward_prepare.body).has_work }}"
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+triggers:
+  - id: every_15_minutes
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/15 * * * *"
+
+errors:
+  - id: alert_failure
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/alerts"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "kind": "kestra_flow_failed",
+        "subject": "HR intake flow failed",
+        "detail": "Execution " ~ execution.id ~ " failed. Check Kestra logs for the failed task.",
+        "dedupe_key": "kestra:" ~ execution.id
+      } }}

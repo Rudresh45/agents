@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HR AI Recruitment Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-subtle: #f1f5f9;
+      --border-color: #e2e8f0;
+      --border-hover: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #eef2ff;
+      --success: #10b981;
+      --success-light: #ecfdf5;
+      --warning: #f59e0b;
+      --warning-light: #fffbeb;
+      --danger: #ef4444;
+      --danger-light: #fef2f2;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+      --radius: 12px;
+      --radius-sm: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0.875rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 1.1rem;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+    }
+    .brand-title {
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-tag {
+      font-size: 0.65rem;
+      font-weight: 600;
+      background: var(--accent-light);
+      color: var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      background: var(--bg-subtle);
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border-color);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .status-dot.online { background: var(--success); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+    .status-dot.degraded { background: var(--warning); }
+    .status-dot.offline { background: var(--danger); }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-subtle);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border-color);
+      font-size: 0.85rem;
+    }
+    .role-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 9999px;
+      background: #e2e8f0;
+      color: var(--text-secondary);
+    }
+    .role-badge.hr { background: #dbeafe; color: #1e40af; }
+    .role-badge.hr_manager { background: #fef3c7; color: #92400e; }
+    .role-badge.ceo { background: #f3e8ff; color: #6b21a8; }
+
+    /* Layout */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* Navigation Tabs */
+    .tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 0.65rem 1rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+    .tab-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.1rem 0.45rem;
+      border-radius: 9999px;
+    }
+    .tab-badge.warning {
+      background: var(--warning);
+      color: #78350f;
+    }
+
+    /* Views */
+    .view-content { display: none; }
+    .view-content.active { display: block; }
+
+    /* KPI Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+    .metric-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    .metric-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+    }
+    .metric-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Section Cards & Tables */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: #fafafa;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .card-body {
+      padding: 1.25rem;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.875rem;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+    .btn-secondary {
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+      color: var(--text-secondary);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-subtle);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+    .btn-success:hover {
+      background: #059669;
+    }
+    .btn-danger {
+      background: var(--danger-light);
+      color: var(--danger);
+      border-color: #fecaca;
+    }
+    .btn-danger:hover {
+      background: #fee2e2;
+    }
+    .btn-sm {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.75rem;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.875rem;
+    }
+    th {
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    /* Badges & Chips */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .status-received { background: #f1f5f9; color: #475569; }
+    .status-forwarded { background: #e0f2fe; color: #0369a1; }
+    .status-shortlisted { background: #ecfdf5; color: #047857; font-weight: 700; }
+    .status-accepted { background: #dcfce7; color: #15803d; }
+    .status-rejected { background: #fee2e2; color: #b91c1c; }
+    .status-open { background: #ecfdf5; color: #047857; }
+    .status-closed { background: #f1f5f9; color: #64748b; }
+
+    .skill-chip {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      margin: 0.1rem;
+      border: 1px solid var(--border-color);
+    }
+    .skill-chip.matched {
+      background: #ecfdf5;
+      color: #047857;
+      border-color: #a7f3d0;
+    }
+
+    /* Score Meter */
+    .score-meter {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .score-bar {
+      width: 60px;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .score-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .score-fill.high { background: var(--success); }
+    .score-fill.mid { background: var(--warning); }
+    .score-fill.low { background: var(--danger); }
+    .score-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    /* Rule Alert Banner */
+    .alert-banner {
+      background: #f8fafc;
+      border-left: 4px solid var(--accent);
+      padding: 1rem;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-left-width: 4px;
+    }
+    .alert-banner.warning {
+      border-left-color: var(--warning);
+      background: var(--warning-light);
+    }
+    .alert-banner h4 {
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 0.2rem;
+    }
+    .alert-banner p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    /* Filters & Inputs */
+    .filters-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .input-control {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      background: var(--bg-surface);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .input-control:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--bg-surface);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-lg);
+      border: 1px solid var(--border-color);
+    }
+    .modal-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 700; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .modal-body { padding: 1.25rem; }
+    .modal-footer {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      background: #fafafa;
+    }
+
+    /* Toast */
+    #toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .toast {
+      background: #1e293b;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">HR</div>
+        <div>
+          <span class="brand-title">Recruitment Agent System</span>
+          <span class="brand-tag">Autonomous Multi-Agent</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="api-status">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text">Connecting...</span>
+        </div>
+
+        <div id="user-profile" class="user-pill">
+          <span id="user-email">Not logged in</span>
+          <span id="user-role" class="role-badge">Guest</span>
+        </div>
+
+        <button id="btn-quick-login" class="btn btn-secondary btn-sm" onclick="openLoginModal()">Switch Role</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-bar">
+      <button class="tab-btn active" onclick="switchTab('overview')">
+        <span>📊</span> Overview
+      </button>
+      <button class="tab-btn" onclick="switchTab('jobs')">
+        <span>💼</span> Jobs <span id="badge-jobs" class="tab-badge">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('candidates')">
+        <span>👥</span> Candidates <span id="badge-candidates" class="tab-badge">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('approvals')">
+        <span>⏳</span> Approvals (R6) <span id="badge-approvals" class="tab-badge warning">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('reports')">
+        <span>📈</span> CEO Reports
+      </button>
+      <button class="tab-btn" onclick="switchTab('settings')">
+        <span>⚙️</span> Settings
+      </button>
+    </nav>
+
+    <!-- Tab 1: Overview -->
+    <div id="tab-overview" class="view-content active">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-title">Active Jobs <span>💼</span></div>
+          <div id="metric-jobs" class="metric-value">0</div>
+          <div class="metric-desc">Open recruitment positions</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Candidates Ingested <span>📥</span></div>
+          <div id="metric-candidates" class="metric-value">0</div>
+          <div class="metric-desc">Parsed from incoming mailbox</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Shortlisted <span>⭐</span></div>
+          <div id="metric-shortlisted" class="metric-value">0</div>
+          <div class="metric-desc">Score &ge; 60% requirement match</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Pending Approvals <span>⏳</span></div>
+          <div id="metric-approvals" class="metric-value" style="color: var(--warning);">0</div>
+          <div class="metric-desc">Awaiting human HR review (R6)</div>
+        </div>
+      </div>
+
+      <div class="alert-banner">
+        <div>
+          <h4>Kestra Multi-Agent Orchestration Active</h4>
+          <p>
+            Three autonomous role-based agents are active: <strong>HR Agent</strong> (intake & parsing),
+            <strong>HR Manager Agent</strong> (scoring & shortlist), and <strong>CEO Report Agent</strong> (executive summary & PII-stripped reports).
+            Candidate emails are protected by frozen invariant <strong>R6</strong>: no email leaves until explicitly approved by HR.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Recent Candidate Applications</span>
+          <button class="btn btn-secondary btn-sm" onclick="switchTab('candidates')">View All Pipeline</button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Job Title</th>
+                  <th>AI Match Score</th>
+                  <th>Matched Skills</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="overview-candidates-body">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading candidates...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Jobs Management -->
+    <div id="tab-jobs" class="view-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Job Openings</span>
+          <button class="btn btn-primary btn-sm" onclick="openNewJobModal()">+ Post New Job</button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Required Skills</th>
+                  <th>Min Experience</th>
+                  <th>Min Score</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading jobs...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Candidates Pipeline -->
+    <div id="tab-candidates" class="view-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Candidate Pipeline</span>
+          <div class="filters-row" style="margin-bottom: 0;">
+            <select id="candidate-status-filter" class="input-control" onchange="loadCandidates()">
+              <option value="">All Statuses</option>
+              <option value="received">Received</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="forwarded">Forwarded</option>
+              <option value="shortlisted">Shortlisted</option>
+              <option value="accepted">Accepted (Invited)</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadCandidates()">Refresh</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Contact</th>
+                  <th>AI Match Score</th>
+                  <th>Status</th>
+                  <th>Skills Matched</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="candidates-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading candidate pipeline...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Approvals (R6 Gate) -->
+    <div id="tab-approvals" class="view-content">
+      <div class="alert-banner warning">
+        <div>
+          <h4>Human-in-the-Loop Gate (Frozen Invariant R6)</h4>
+          <p>
+            No candidate-facing email (interview invite or rejection) is transmitted without explicit human approval.
+            Review drafts generated by the HR Agent below. Once approved, the backend allows Kestra to resume and transmit the decision.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Decision Email Drafts</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadDrafts()">Refresh Queue</button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Subject</th>
+                  <th>Candidate ID</th>
+                  <th>Status</th>
+                  <th>Created At</th>
+                  <th>Review Action</th>
+                </tr>
+              </thead>
+              <tbody id="drafts-table-body">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading drafts...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: CEO Reports -->
+    <div id="tab-reports" class="view-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Executive CEO Reports</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadReports()">Refresh</button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Report Title / ID</th>
+                  <th>Generated At</th>
+                  <th>Candidates Included</th>
+                  <th>Format</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="reports-table-body">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading CEO reports...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 6: Settings -->
+    <div id="tab-settings" class="view-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">System Settings & Connection</span>
+        </div>
+        <div class="card-body">
+          <div style="max-width: 500px; display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.35rem;">Backend API Base URL</label>
+              <input type="text" id="setting-api-url" class="input-control" style="width: 100%;" value="http://127.0.0.1:8001">
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Points to your running FastAPI server</span>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save & Reconnect</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Role Switcher / Login Modal -->
+  <div id="login-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Select Role Account</span>
+        <button class="modal-close" onclick="closeLoginModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Quick-switch between seeded role accounts to test role-based permissions:
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <button class="btn btn-secondary" style="justify-content: space-between; padding: 0.75rem 1rem;" onclick="loginAs('hr@example.com', 'change-me-hr')">
+            <div style="text-align: left;">
+              <div style="font-weight: 700;">HR Admin</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">hr@example.com</div>
+            </div>
+            <span class="role-badge hr">HR</span>
+          </button>
+
+          <button class="btn btn-secondary" style="justify-content: space-between; padding: 0.75rem 1rem;" onclick="loginAs('manager@example.com', 'change-me-manager')">
+            <div style="text-align: left;">
+              <div style="font-weight: 700;">HR Manager</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">manager@example.com (Can approve drafts)</div>
+            </div>
+            <span class="role-badge hr_manager">HR_MANAGER</span>
+          </button>
+
+          <button class="btn btn-secondary" style="justify-content: space-between; padding: 0.75rem 1rem;" onclick="loginAs('ceo@example.com', 'change-me-ceo')">
+            <div style="text-align: left;">
+              <div style="font-weight: 700;">CEO Executive</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">ceo@example.com (Read-only reports)</div>
+            </div>
+            <span class="role-badge ceo">CEO</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post Job Modal -->
+  <div id="new-job-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Post New Job Opening</span>
+        <button class="modal-close" onclick="closeNewJobModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="new-job-form" onsubmit="handleCreateJob(event)" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Job Title</label>
+            <input type="text" id="job-title" class="input-control" style="width: 100%;" required placeholder="e.g. Senior Backend Engineer">
+          </div>
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Description</label>
+            <textarea id="job-desc" class="input-control" style="width: 100%; height: 80px;" required placeholder="Describe responsibilities and requirements..."></textarea>
+          </div>
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Required Skills (comma separated)</label>
+            <input type="text" id="job-skills" class="input-control" style="width: 100%;" required placeholder="python, fastapi, sql">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Min Experience (Years)</label>
+              <input type="number" id="job-exp" class="input-control" style="width: 100%;" value="3" min="0">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 0.25rem;">Min Score Threshold</label>
+              <input type="number" id="job-score" class="input-control" style="width: 100%;" value="60" min="0" max="100">
+            </div>
+          </div>
+          <div class="modal-footer" style="margin: 0.5rem -1.25rem -1.25rem;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeNewJobModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm">Create Job Opening</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Candidate Details Modal -->
+  <div id="candidate-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="cand-modal-title">Candidate Details</span>
+        <button class="modal-close" onclick="closeCandidateModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="cand-modal-body">
+        Loading...
+      </div>
+    </div>
+  </div>
+
+  <!-- Draft Review Modal -->
+  <div id="draft-modal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="draft-modal-title">Review Email Draft</span>
+        <button class="modal-close" onclick="closeDraftModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="draft-modal-body">
+        Loading draft...
+      </div>
+      <div class="modal-footer" id="draft-modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="closeDraftModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script>
+    // Configuration & State
+    let API_BASE = localStorage.getItem('hr_api_base') || (window.location.port === '8001' ? window.location.origin : 'http://127.0.0.1:8001');
+    let AUTH_TOKEN = localStorage.getItem('hr_jwt') || null;
+    let CURRENT_USER = JSON.parse(localStorage.getItem('hr_user') || 'null');
+
+    // UI Helpers
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = 'toast';
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
+
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.textContent.toLowerCase().includes(name));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const targetView = document.getElementById('tab-' + name);
+      if (targetView) targetView.classList.add('active');
+
+      if (name === 'jobs') loadJobs();
+      if (name === 'candidates') loadCandidates();
+      if (name === 'approvals') loadDrafts();
+      if (name === 'reports') loadReports();
+      if (name === 'overview') refreshDashboard();
+    }
+
+    // API Client with Auth
+    async function apiFetch(endpoint, options = {}) {
+      const url = API_BASE + endpoint;
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (AUTH_TOKEN) {
+        headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+      }
+      try {
+        const resp = await fetch(url, { ...options, headers });
+        if (resp.status === 401) {
+          showToast('Session expired. Please log in.', 'error');
+          openLoginModal();
+          return null;
+        }
+        return await resp.json();
+      } catch (err) {
+        console.error('Fetch error:', err);
+        return null;
+      }
+    }
+
+    // Health Check
+    async function checkHealth() {
+      const dot = document.getElementById('status-dot');
+      const txt = document.getElementById('status-text');
+      try {
+        const res = await fetch(API_BASE + '/health');
+        if (res.ok) {
+          const data = await res.json();
+          dot.className = 'status-dot ' + (data.status === 'healthy' ? 'online' : 'degraded');
+          txt.textContent = data.status === 'healthy' ? 'Backend Online' : 'Status: ' + data.status;
+        } else {
+          dot.className = 'status-dot offline';
+          txt.textContent = 'Backend Offline';
+        }
+      } catch {
+        dot.className = 'status-dot offline';
+        txt.textContent = 'Server Unreachable';
+      }
+    }
+
+    // Auth & Login
+    async function loginAs(email, password) {
+      try {
+        const resp = await fetch(API_BASE + '/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        if (!resp.ok) {
+          showToast('Login failed', 'error');
+          return;
+        }
+        const data = await resp.json();
+        AUTH_TOKEN = data.access_token;
+        localStorage.setItem('hr_jwt', AUTH_TOKEN);
+
+        // Fetch User Info
+        const userResp = await fetch(API_BASE + '/api/v1/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN }
+        });
+        if (userResp.ok) {
+          CURRENT_USER = await userResp.json();
+          localStorage.setItem('hr_user', JSON.stringify(CURRENT_USER));
+          updateUserUI();
+          showToast(`Logged in as ${CURRENT_USER.full_name} (${CURRENT_USER.role})`);
+        }
+        closeLoginModal();
+        refreshDashboard();
+      } catch (err) {
+        showToast('Login error: ' + err.message, 'error');
+      }
+    }
+
+    function updateUserUI() {
+      const emailEl = document.getElementById('user-email');
+      const roleEl = document.getElementById('user-role');
+      if (CURRENT_USER) {
+        emailEl.textContent = CURRENT_USER.email;
+        roleEl.textContent = CURRENT_USER.role;
+        roleEl.className = 'role-badge ' + CURRENT_USER.role.toLowerCase();
+      } else {
+        emailEl.textContent = 'Not logged in';
+        roleEl.textContent = 'Guest';
+        roleEl.className = 'role-badge';
+      }
+    }
+
+    // Modals
+    function openLoginModal() { document.getElementById('login-modal').classList.add('open'); }
+    function closeLoginModal() { document.getElementById('login-modal').classList.remove('open'); }
+    function openNewJobModal() { document.getElementById('new-job-modal').classList.add('open'); }
+    function closeNewJobModal() { document.getElementById('new-job-modal').classList.remove('open'); }
+    function closeCandidateModal() { document.getElementById('candidate-modal').classList.remove('open'); }
+    function closeDraftModal() { document.getElementById('draft-modal').classList.remove('open'); }
+
+    // Jobs
+    async function loadJobs() {
+      const data = await apiFetch('/api/v1/jobs');
+      if (!data) return;
+      const tbody = document.getElementById('jobs-table-body');
+      const jobs = data.items || [];
+      document.getElementById('badge-jobs').textContent = jobs.length;
+      document.getElementById('metric-jobs').textContent = jobs.length;
+
+      if (jobs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No jobs posted yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = jobs.map(j => `
+        <tr>
+          <td><strong>${j.title}</strong><div style="font-size: 0.75rem; color: var(--text-muted);">${j.description.substring(0, 60)}...</div></td>
+          <td>${(j.required_skills || []).map(s => `<span class="skill-chip">${s}</span>`).join('')}</td>
+          <td>${j.min_experience_years || 0} yrs</td>
+          <td><span class="score-text">${j.min_score || 60}%</span></td>
+          <td><span class="status-badge status-${j.status}">${j.status}</span></td>
+          <td style="font-size: 0.75rem; color: var(--text-muted);">${new Date(j.created_at).toLocaleDateString()}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function handleCreateJob(e) {
+      e.preventDefault();
+      const title = document.getElementById('job-title').value.trim();
+      const description = document.getElementById('job-desc').value.trim();
+      const skillsRaw = document.getElementById('job-skills').value;
+      const required_skills = skillsRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const min_experience_years = parseInt(document.getElementById('job-exp').value, 10);
+      const min_score = parseInt(document.getElementById('job-score').value, 10);
+
+      const res = await apiFetch('/api/v1/jobs', {
+        method: 'POST',
+        body: JSON.stringify({ title, description, required_skills, min_experience_years, min_score })
+      });
+
+      if (res && res.id) {
+        showToast('Job opening created successfully!');
+        closeNewJobModal();
+        loadJobs();
+        refreshDashboard();
+      } else {
+        showToast('Failed to create job', 'error');
+      }
+    }
+
+    // Candidates
+    async function loadCandidates() {
+      const statusFilter = document.getElementById('candidate-status-filter')?.value || '';
+      const query = statusFilter ? `?status=${statusFilter}` : '';
+      const data = await apiFetch('/api/v1/candidates' + query);
+      if (!data) return;
+
+      const candidates = data.items || [];
+      document.getElementById('badge-candidates').textContent = candidates.length;
+      document.getElementById('metric-candidates').textContent = data.total || candidates.length;
+
+      const shortlistedCount = candidates.filter(c => c.status === 'shortlisted' || c.status === 'accepted').length;
+      document.getElementById('metric-shortlisted').textContent = shortlistedCount;
+
+      const tbody = document.getElementById('candidates-table-body');
+      const overviewTbody = document.getElementById('overview-candidates-body');
+
+      if (candidates.length === 0) {
+        const emptyRow = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No candidates found.</td></tr>';
+        if (tbody) tbody.innerHTML = emptyRow;
+        if (overviewTbody) overviewTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No candidates ingested yet.</td></tr>';
+        return;
+      }
+
+      const rowsHtml = candidates.map(c => {
+        const score = c.score !== null ? c.score : 0;
+        const scoreClass = score >= 70 ? 'high' : (score >= 50 ? 'mid' : 'low');
+        return `
+          <tr>
+            <td><strong>${c.full_name}</strong></td>
+            <td><div style="font-size: 0.8rem;">${c.email}</div><div style="font-size: 0.75rem; color: var(--text-muted);">${c.phone || ''}</div></td>
+            <td>
+              <div class="score-meter">
+                <span class="score-text">${score}%</span>
+                <div class="score-bar"><div class="score-fill ${scoreClass}" style="width: ${score}%;"></div></div>
+              </div>
+            </td>
+            <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+            <td>${(c.matched_skills || []).map(s => `<span class="skill-chip matched">${s}</span>`).join('')}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="viewCandidate('${c.id}')">Details</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      if (tbody) tbody.innerHTML = rowsHtml;
+
+      if (overviewTbody) {
+        overviewTbody.innerHTML = candidates.slice(0, 5).map(c => `
+          <tr>
+            <td><strong>${c.full_name}</strong></td>
+            <td>Senior Backend Engineer</td>
+            <td><span class="score-text">${c.score || 0}%</span></td>
+            <td>${(c.matched_skills || []).slice(0, 3).map(s => `<span class="skill-chip matched">${s}</span>`).join('')}</td>
+            <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    async function viewCandidate(id) {
+      const c = await apiFetch(`/api/v1/candidates/${id}`);
+      if (!c) return;
+
+      document.getElementById('cand-modal-title').textContent = c.full_name;
+      document.getElementById('cand-modal-body').innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="status-badge status-${c.status}">${c.status}</span>
+            <span class="score-text">AI Score: ${c.score || 0}/100</span>
+          </div>
+          <div><strong>Email:</strong> ${c.email}</div>
+          <div><strong>Phone:</strong> ${c.phone || 'N/A'}</div>
+          <div><strong>Matched Skills:</strong> ${(c.matched_skills || []).map(s => `<span class="skill-chip matched">${s}</span>`).join('') || 'None'}</div>
+          <div><strong>Missing Skills:</strong> ${(c.missing_skills || []).map(s => `<span class="skill-chip">${s}</span>`).join('') || 'None'}</div>
+          <div><strong>AI Reasoning:</strong> <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">${c.reason || 'Pending evaluation'}</p></div>
+          <div><strong>Resume Content:</strong>
+            <pre style="background: var(--bg-subtle); padding: 0.75rem; border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; max-height: 200px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.25rem;">${c.resume_text || 'No resume text available'}</pre>
+          </div>
+        </div>
+      `;
+      document.getElementById('candidate-modal').classList.add('open');
+    }
+
+    // Drafts & Approvals (R6)
+    async function loadDrafts() {
+      const data = await apiFetch('/api/v1/drafts');
+      if (!data) return;
+      const drafts = data.items || [];
+      const pendingDrafts = drafts.filter(d => !d.approved && !d.sent_at);
+      document.getElementById('badge-approvals').textContent = pendingDrafts.length;
+      document.getElementById('metric-approvals').textContent = pendingDrafts.length;
+
+      const tbody = document.getElementById('drafts-table-body');
+      if (drafts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No decision drafts found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = drafts.map(d => {
+        const isApproved = d.approved;
+        const isSent = !!d.sent_at;
+        return `
+          <tr>
+            <td><span class="status-badge status-${d.draft_type === 'interview_invite' ? 'shortlisted' : 'rejected'}">${d.draft_type}</span></td>
+            <td><strong>${d.subject}</strong></td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${d.candidate_id.substring(0, 8)}...</td>
+            <td>
+              ${isSent ? '<span class="status-badge status-accepted">Sent</span>' :
+                (isApproved ? '<span class="status-badge status-open">Approved (Ready)</span>' :
+                '<span class="status-badge status-forwarded">Pending Review</span>')}
+            </td>
+            <td style="font-size: 0.75rem; color: var(--text-muted);">${new Date(d.created_at).toLocaleDateString()}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="reviewDraft('${d.id}')">Review & Act</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function reviewDraft(id) {
+      const d = await apiFetch(`/api/v1/drafts/${id}`);
+      if (!d) return;
+
+      document.getElementById('draft-modal-title').textContent = `Review: ${d.draft_type.replace('_', ' ')}`;
+      document.getElementById('draft-modal-body').innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div><strong>Subject:</strong> ${d.subject}</div>
+          <div><strong>Candidate ID:</strong> <code>${d.candidate_id}</code></div>
+          <div><strong>Status:</strong> ${d.approved ? 'Approved by ' + (d.approved_by || 'HR') : 'Pending Approval'}</div>
+          <div><strong>Email Body Preview:</strong>
+            <pre style="background: var(--bg-subtle); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-family: inherit; white-space: pre-wrap; margin-top: 0.25rem;">${d.body}</pre>
+          </div>
+        </div>
+      `;
+
+      const footer = document.getElementById('draft-modal-footer');
+      if (!d.approved && !d.sent_at) {
+        footer.innerHTML = `
+          <button class="btn btn-secondary btn-sm" onclick="closeDraftModal()">Cancel</button>
+          <button class="btn btn-success btn-sm" onclick="approveDraft('${d.id}')">Approve Draft (R6)</button>
+        `;
+      } else {
+        footer.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="closeDraftModal()">Close</button>`;
+      }
+      document.getElementById('draft-modal').classList.add('open');
+    }
+
+    async function approveDraft(id) {
+      const res = await apiFetch(`/api/v1/drafts/${id}/approve`, { method: 'POST' });
+      if (res && res.approved) {
+        showToast('Draft approved! Kestra can now send the decision email.');
+        closeDraftModal();
+        loadDrafts();
+        refreshDashboard();
+      } else {
+        showToast('Approval failed', 'error');
+      }
+    }
+
+    // Reports
+    async function loadReports() {
+      const data = await apiFetch('/api/v1/reports/ceo');
+      if (!data) return;
+      const reports = data.items || [];
+      const tbody = document.getElementById('reports-table-body');
+      if (reports.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No CEO executive reports generated yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = reports.map(r => `
+        <tr>
+          <td><strong>Approved Shortlist Report</strong><div style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">${r.id}</div></td>
+          <td>${new Date(r.created_at).toLocaleDateString()}</td>
+          <td>${r.candidate_count || 1} candidate(s)</td>
+          <td><span class="skill-chip">${r.format || 'XLSX'}</span></td>
+          <td>
+            <a href="${API_BASE}/api/v1/reports/ceo/${r.id}/download" class="btn btn-secondary btn-sm" download>Download Excel</a>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Settings
+    function saveSettings() {
+      const url = document.getElementById('setting-api-url').value.trim();
+      if (url) {
+        API_BASE = url;
+        localStorage.setItem('hr_api_base', url);
+        showToast('Settings saved. Reconnecting...');
+        checkHealth();
+        refreshDashboard();
+      }
+    }
+
+    function refreshDashboard() {
+      loadJobs();
+      loadCandidates();
+      loadDrafts();
+    }
+
+    // Initial Startup
+    window.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('setting-api-url').value = API_BASE;
+      await checkHealth();
+      setInterval(checkHealth, 10000);
+
+      // Auto login as HR Admin if no token present
+      if (!AUTH_TOKEN) {
+        await loginAs('hr@example.com', 'change-me-hr');
+      } else {
+        updateUserUI();
+        refreshDashboard();
+      }
+    });
+  </script>
+</body>
+</html>

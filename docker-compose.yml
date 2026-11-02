@@ -1,0 +1,133 @@
+name: hr-agents
+
+# Kestra is pinned to 1.3.x because the HR flows use `ForEach` and
+# flow-level `pluginDefaults`. Kestra 2.0 renamed `ForEach` to `Loop` and
+# removed `pluginDefaults` from Open Source.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kestra
+      POSTGRES_USER: kestra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - kestra-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - hr_internal
+
+  kestra:
+    image: kestra/kestra:v1.3.45
+    restart: unless-stopped
+    # Development convenience for the named volumes. Kestra does not need the
+    # Docker socket for these flows, so it is deliberately not mounted.
+    user: "root"
+    stop_grace_period: 6m
+    command: server standalone --worker-thread=32 --flow-path /app/flows
+    env_file:
+      - ./kestra/.env_encoded
+    environment:
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:postgresql://postgres:5432/kestra
+            driverClassName: org.postgresql.Driver
+            username: kestra
+            password: "${POSTGRES_PASSWORD}"
+        kestra:
+          server:
+            basic-auth:
+              username: "${KESTRA_BASIC_AUTH_USERNAME}"
+              password: "${KESTRA_BASIC_AUTH_PASSWORD}"
+          encryption:
+            secret-key: "${KESTRA_ENCRYPTION_SECRET_KEY}"
+          repository:
+            type: postgres
+          storage:
+            type: local
+            local:
+              base-path: "/app/storage"
+          queue:
+            type: postgres
+          tasks:
+            tmp-dir:
+              path: /tmp/kestra-wd/tmp
+          url: http://127.0.0.1:8082/
+          anonymous-usage-report:
+            enabled: false
+    volumes:
+      - ./kestra/flows:/app/flows:ro
+      - kestra-data:/app/storage
+      - kestra-tmp:/tmp/kestra-wd
+    ports:
+      # Loopback only. Do not expose Kestra on a public interface.
+      - "127.0.0.1:8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hr_internal
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: sqlite:////data/hr_agent.db
+      CHECKPOINT_DB: /data/checkpoints.sqlite
+      UPLOAD_DIR: /data/uploads
+      LOG_DIR: /data/logs
+      KESTRA_URL: http://kestra:8080
+      # Kestra OSS 1.3 uses HTTP Basic auth. The same credentials are set on
+      # the Kestra service above; API tokens are an Enterprise feature.
+      KESTRA_API_USERNAME: ${KESTRA_BASIC_AUTH_USERNAME:?Set KESTRA_BASIC_AUTH_USERNAME in .env}
+      KESTRA_API_PASSWORD: ${KESTRA_BASIC_AUTH_PASSWORD:?Set KESTRA_BASIC_AUTH_PASSWORD in .env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
+      USE_KESTRA_LLM: ${USE_KESTRA_LLM:-false}
+      APP_BASE_URL: http://127.0.0.1:8001
+      FRONTEND_ORIGIN: http://127.0.0.1:5173
+    volumes:
+      - backend-data:/data
+    ports:
+      # Loopback only. Kestra reaches the backend by service name, not this port.
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      kestra:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - hr_internal
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - hr_internal
+
+volumes:
+  kestra-postgres:
+  kestra-data:
+  kestra-tmp:
+  backend-data:
+
+networks:
+  hr_internal:
+    driver: bridge

@@ -1,0 +1,48 @@
+# Short retention for HR workflow logs and task outputs.
+#
+# Kestra execution outputs include sanitised prompts and model JSON, and a
+# paused run can contain resume-derived text in its task outputs. Keep the
+# window short (7 days) and purge terminal executions only so a paused run is
+# never deleted while it is still waiting for HR approval.
+#
+# `PurgeExecutions` removes the execution, its task outputs, metrics and stored
+# files. `PurgeLogs` removes execution and trigger logs in bulk for the
+# `hr.recruitment` namespace prefix (including `hr.recruitment.fragments`).
+#
+# The window is a literal because Kestra's `dateAdd` filter has historically
+# rejected Integer-valued inputs (Integer vs Long). Change both literals if you
+# need a different window.
+
+id: hr_retention
+namespace: system
+description: |
+  Delete terminal HR workflow executions, task outputs and logs after a short
+  retention window. PAUSED executions are excluded.
+
+tasks:
+  - id: purge_executions
+    type: io.kestra.plugin.core.execution.PurgeExecutions
+    namespace: hr.recruitment
+    endDate: "{{ now() | dateAdd(-7, 'DAYS') }}"
+    states:
+      - SUCCESS
+      - WARNING
+      - FAILED
+      - KILLED
+      - CANCELLED
+    purgeExecution: true
+    purgeLog: false
+    purgeMetric: true
+    purgeStorage: true
+    batchSize: 100
+
+  - id: purge_logs
+    type: io.kestra.plugin.core.log.PurgeLogs
+    namespace: hr.recruitment
+    endDate: "{{ now() | dateAdd(-7, 'DAYS') }}"
+
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 3 * * *"
+    timezone: UTC

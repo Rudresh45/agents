@@ -1,0 +1,355 @@
+# Phase 5: full screening and decision flow.
+#
+# Kestra orchestrates: screen forwarded candidates, draft decision emails, wait
+# for HR approval, send only approved drafts, then build the CEO report. Every
+# LLM call is a Kestra AI task using Gemini. The backend prepares sanitised
+# prompts and applies validated JSON.
+#
+# Kestra 1.x syntax (`ForEach`, flow-level `pluginDefaults`). Compose pins
+# v1.3.45. The Pause has no default RESUME behaviour: after P7D it CANCELs, so
+# an unanswered approval never sends candidate mail automatically.
+#
+# Execution outputs still contain sanitised prompts and model JSON.
+# `system.hr_retention` purges terminal executions and logs after 7 days.
+
+id: hr_screening_and_decisions
+namespace: hr.recruitment
+description: |
+  Screen forwarded candidates, draft decisions, wait for HR approval, send the
+  approved emails, and email the CEO report for one job.
+
+inputs:
+  - id: job_id
+    type: STRING
+    required: true
+  - id: run_id
+    type: STRING
+    required: true
+  - id: backend_url
+    type: STRING
+    defaults: http://backend:8000
+  - id: gemini_model
+    type: STRING
+    defaults: gemini-2.5-flash
+
+pluginDefaults:
+  - type: io.kestra.plugin.ai.completion.ChatCompletion
+    values:
+      provider:
+        type: io.kestra.plugin.ai.provider.GoogleGemini
+        apiKey: "{{ secret('GEMINI_API_KEY') }}"
+        modelName: "{{ inputs.gemini_model }}"
+
+tasks:
+  # 1. HR manager screening.
+  - id: screen_prepare
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/prepare"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "job_id": inputs.job_id,
+        "limit": 200,
+        "run_id": inputs.run_id
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  - id: score_each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.screen_prepare.body).items }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.screen_prepare.body).has_work }}"
+    tasks:
+      - id: ai_score
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: screen_apply_item
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "items": [{
+              "candidate_id": fromJson(taskrun.value).candidate_id,
+              "result": outputs.ai_score.jsonOutput,
+              "model_name": inputs.gemini_model,
+              "prompt_version": fromJson(taskrun.value).prompt_version
+            }],
+            "job_id": inputs.job_id,
+            "run_id": inputs.run_id,
+            "idempotency_key": execution.id,
+            "finalize": false
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  - id: screen_apply_finalize
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-manager/screen/apply"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "items": [],
+        "job_id": inputs.job_id,
+        "run_id": inputs.run_id,
+        "idempotency_key": execution.id,
+        "finalize": true
+      } }}
+    runIf: "{{ fromJson(outputs.screen_prepare.body).has_work }}"
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  # 2. Draft interview invitations and rejections. Drafts stay unapproved.
+  - id: draft_prepare
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/hr-agent/draft/prepare"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "job_id": inputs.job_id,
+        "limit": 200,
+        "run_id": inputs.run_id
+      } }}
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempts: 3
+
+  - id: draft_each
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ fromJson(outputs.draft_prepare.body).items }}"
+    concurrencyLimit: 1
+    runIf: "{{ fromJson(outputs.draft_prepare.body).has_work }}"
+    tasks:
+      - id: ai_draft
+        type: io.kestra.plugin.ai.completion.ChatCompletion
+        configuration:
+          temperature: 0.2
+          logRequests: false
+          logResponses: false
+          responseFormat:
+            type: JSON
+            strictJson: true
+            jsonSchema: "{{ fromJson(taskrun.value).response_schema }}"
+        messages:
+          - type: SYSTEM
+            content: "{{ fromJson(taskrun.value).system_prompt }}"
+          - type: USER
+            content: "{{ fromJson(taskrun.value).user_prompt }}"
+        retry:
+          type: constant
+          interval: PT15S
+          maxAttempts: 3
+        timeout: PT2M
+
+      - id: draft_apply_item
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/draft/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "items": [{
+              "candidate_id": fromJson(taskrun.value).candidate_id,
+              "draft_type": fromJson(taskrun.value).draft_type,
+              "result": outputs.ai_draft.jsonOutput,
+              "model_name": inputs.gemini_model,
+              "prompt_version": fromJson(taskrun.value).prompt_version
+            }],
+            "run_id": inputs.run_id
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+  # 3. Human approval gate. Never auto-resume: a timeout cancels the execution.
+  - id: wait_for_hr_approval
+    type: io.kestra.plugin.core.flow.Pause
+    pauseDuration: P7D
+    behavior: CANCEL
+    onResume:
+      - id: approved
+        type: BOOLEAN
+        required: true
+        defaults: false
+      - id: approved_by
+        type: STRING
+        required: true
+        defaults: kestra
+
+  # 4. Send only when the backend resumed with approved=true. The backend also
+  # enforces approval on every draft (R6), so this gate is defence in depth.
+  - id: approved_gate
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.wait_for_hr_approval.onResume.approved == true }}"
+    then:
+      - id: send_approved
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/hr-agent/send/approved"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "run_id": inputs.run_id,
+            "idempotency_key": execution.id
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+      # 5. CEO report, downstream of the send step.
+      - id: report_prepare
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/ceo-report/prepare"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "job_ids": [inputs.job_id],
+            "run_id": inputs.run_id
+          } }}
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+      - id: report_summarise_each
+        type: io.kestra.plugin.core.flow.ForEach
+        values: "{{ fromJson(outputs.report_prepare.body).items }}"
+        concurrencyLimit: 1
+        runIf: "{{ fromJson(outputs.report_prepare.body).has_work }}"
+        tasks:
+          - id: ai_report_summary
+            type: io.kestra.plugin.ai.completion.ChatCompletion
+            configuration:
+              temperature: 0
+              logRequests: false
+              logResponses: false
+              responseFormat:
+                type: JSON
+                strictJson: true
+                jsonSchema: "{{ fromJson(taskrun.value).response_schema }}"
+            messages:
+              - type: SYSTEM
+                content: "{{ fromJson(taskrun.value).system_prompt }}"
+              - type: USER
+                content: "{{ fromJson(taskrun.value).user_prompt }}"
+            retry:
+              type: constant
+              interval: PT15S
+              maxAttempts: 3
+            timeout: PT2M
+
+          - id: report_apply_summary
+            type: io.kestra.plugin.core.http.Request
+            uri: "{{ inputs.backend_url }}/internal/ceo-report/apply"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+              Content-Type: application/json
+            body: |
+              {{ {
+                "items": [{
+                  "candidate_id": fromJson(taskrun.value).candidate_id,
+                  "result": outputs.ai_report_summary.jsonOutput,
+                  "model_name": inputs.gemini_model,
+                  "prompt_version": fromJson(taskrun.value).prompt_version
+                }],
+                "job_ids": [inputs.job_id],
+                "run_id": inputs.run_id,
+                "idempotency_key": execution.id,
+                "finalize": false,
+                "send": false
+              } }}
+            retry:
+              type: constant
+              interval: PT10S
+              maxAttempts: 3
+
+      - id: report_finalize
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ inputs.backend_url }}/internal/ceo-report/apply"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+          Content-Type: application/json
+        body: |
+          {{ {
+            "items": [],
+            "job_ids": [inputs.job_id],
+            "run_id": inputs.run_id,
+            "idempotency_key": execution.id,
+            "finalize": true,
+            "send": true
+          } }}
+        runIf: "{{ fromJson(outputs.report_prepare.body).has_work }}"
+        retry:
+          type: constant
+          interval: PT10S
+          maxAttempts: 3
+
+    else:
+      - id: log_declined
+        type: io.kestra.plugin.core.log.Log
+        message: "HR did not approve this run; no candidate email or CEO report was sent."
+
+errors:
+  - id: alert_failure
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.backend_url }}/internal/alerts"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secret('INTERNAL_SERVICE_TOKEN') }}"
+      Content-Type: application/json
+    body: |
+      {{ {
+        "kind": "kestra_flow_failed",
+        "subject": "HR screening flow failed",
+        "detail": "Execution " ~ execution.id ~ " failed. Check Kestra logs for the failed task.",
+        "dedupe_key": "kestra:" ~ execution.id
+      } }}

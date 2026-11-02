@@ -1,0 +1,77 @@
+[project]
+name = "hr-agent-backend"
+version = "0.1.0"
+description = "HR AI Agent System backend"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["app", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/db/models/*", "app/main.py"]
+
+[tool.importlinter]
+root_packages = ["app"]
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "app.api",
+    "app.internal",
+    "app.agents",
+    "app.services",
+    "app.db",
+]
+
+[[tool.importlinter.contracts]]
+name = "Utils are independent of business layers"
+type = "forbidden"
+source_modules = ["app.utils"]
+forbidden_modules = [
+    "app.api",
+    "app.agents",
+    "app.services",
+    "app.db",
+]
+
+[[tool.importlinter.contracts]]
+name = "Database layer does not import business layers"
+type = "forbidden"
+source_modules = ["app.db"]
+forbidden_modules = [
+    "app.api",
+    "app.agents",
+    "app.services",
+]
+
+[[tool.importlinter.contracts]]
+name = "Agents never import other agents"
+type = "forbidden"
+source_modules = ["app.agents.hr_agent"]
+forbidden_modules = ["app.agents.hr_manager_agent", "app.agents.ceo_report_agent"]
+
+[[tool.importlinter.contracts]]
+name = "HR manager agent is isolated"
+type = "forbidden"
+source_modules = ["app.agents.hr_manager_agent"]
+forbidden_modules = ["app.agents.hr_agent", "app.agents.ceo_report_agent"]
+
+[[tool.importlinter.contracts]]
+name = "CEO report agent is isolated"
+type = "forbidden"
+source_modules = ["app.agents.ceo_report_agent"]
+forbidden_modules = ["app.agents.hr_agent", "app.agents.hr_manager_agent"]
